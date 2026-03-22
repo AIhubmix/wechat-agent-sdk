@@ -8,14 +8,11 @@ Supports [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) to brid
 
 > This is not an official WeChat project. Built on the iLink Bot API, for learning and research purposes only.
 
-## Features
+## How It Works
 
-- **Minimal interface** — implement a single `chat()` method to connect to WeChat
-- **ACP protocol support** — bridge Claude Code, Codex, Kimi CLI, and other ACP agents
-- **Zero infrastructure** — runs locally, no public server, Redis, or database required
-- **Resume on restart** — picks up where it left off using persisted cursor
-- **Auto reconnect** — built-in exponential backoff and session expiry recovery
-- **Markdown conversion** — automatically strips markdown to WeChat-friendly plain text
+1. Install this SDK and create a Python script that implements the `Agent` interface
+2. The SDK handles WeChat login (QR code), message polling, deduplication, and reply delivery
+3. You only need to implement one method: `chat(request) -> response`
 
 ## Installation
 
@@ -23,40 +20,79 @@ Supports [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) to brid
 pip install wechat-agent-sdk
 ```
 
-Optional dependencies:
+Install with optional dependencies based on your use case:
 
 ```bash
-pip install 'wechat-agent-sdk[qr]'     # Terminal QR code display
-pip install 'wechat-agent-sdk[acp]'     # ACP protocol support
-pip install 'wechat-agent-sdk[openai]'  # OpenAI integration
+# Terminal QR code display (recommended)
+pip install 'wechat-agent-sdk[qr]'
+
+# ACP protocol support (required for Claude Code / Codex / Kimi integration)
+pip install 'wechat-agent-sdk[acp]'
+
+# OpenAI integration
+pip install 'wechat-agent-sdk[openai]'
 ```
 
 > Requires Python >= 3.11
 
-## Quick Start
+## Implementation Guide
 
-### 1. Echo Bot (Minimal Example)
+> **Note for AI Agents**: This documentation is designed for AI agents (e.g. Claude Code) to read and follow. To implement WeChat integration, write code based on the patterns below — do not run the scripts in `examples/` directly. The `examples/` directory is only for reference.
+
+To integrate WeChat with an AI backend, create a Python script with the following pattern:
+
+### Step 1: Implement the Agent Interface
+
+Subclass `Agent` and implement the `chat()` method. This is the only required method. The SDK calls it for every inbound WeChat message and sends the returned `ChatResponse` back to the user.
 
 ```python
 import asyncio
 from wechat_agent_sdk import Agent, ChatRequest, ChatResponse, WeChatBot
 
-class EchoAgent(Agent):
+class MyAgent(Agent):
     async def chat(self, request: ChatRequest) -> ChatResponse:
+        # request.text contains the user's message
+        # request.conversation_id identifies the user/conversation
+        # Return a ChatResponse with the reply text
         return ChatResponse(text=f"You said: {request.text}")
 
 async def main():
-    bot = WeChatBot(agent=EchoAgent())
-    await bot.run()  # Shows QR code on first run, scan to login
+    bot = WeChatBot(agent=MyAgent())
+    await bot.run()
 
 asyncio.run(main())
 ```
 
-On first run, a QR code is displayed in the terminal (requires the `qrcode` dependency). Scan it with WeChat to confirm. Credentials are saved to `~/.wechat-agent-sdk/accounts.json` and reused on subsequent runs.
+### Step 2: Run and Login
 
-### 2. Connect Claude Code via ACP
+Run the script. On first run, a QR code is displayed in the terminal (requires the `qrcode` dependency). Scan it with WeChat to login. Credentials are persisted to `~/.wechat-agent-sdk/accounts.json` and reused on subsequent runs.
 
-[ACP (Agent Client Protocol)](https://agentclientprotocol.com/) is an open agent communication protocol. If you have an ACP-compatible agent, you can bridge it to WeChat directly:
+---
+
+## Integration Patterns
+
+### Pattern A: Connect Claude Code via ACP
+
+Use this pattern to bridge [Claude Code](https://code.claude.com/) or other ACP-compatible agents to WeChat.
+
+**Prerequisites:**
+
+1. Install the ACP adapter for your agent (requires Node.js >= 18):
+
+```bash
+# Claude Code ACP adapter
+npm install -g @zed-industries/claude-code-acp
+```
+
+> Pre-built binaries are also available on the [Releases page](https://github.com/zed-industries/claude-agent-acp/releases).
+
+2. Install the SDK with ACP support:
+
+```bash
+pip install 'wechat-agent-sdk[acp,qr]'
+```
+
+**Implementation:**
 
 ```python
 import asyncio
@@ -64,28 +100,42 @@ from wechat_agent_sdk import WeChatBot
 from wechat_agent_sdk.acp.adapter import AcpAgent
 
 async def main():
-    # command is the ACP agent's launch command
-    agent = AcpAgent(command="claude-agent-acp")
+    agent = AcpAgent(
+        command="claude-agent-acp",       # ACP agent launch command
+        permission_mode="bypassPermissions",  # Required: skip terminal permission prompts
+    )
     bot = WeChatBot(agent=agent)
     await bot.run()
 
 asyncio.run(main())
 ```
 
-Supported ACP agents:
+**Supported ACP agents:**
 
-| Agent | Command | Reference |
-|-------|---------|-----------|
-| Claude Code | `claude-agent-acp` | [zed-industries/claude-agent-acp](https://github.com/zed-industries/claude-agent-acp) |
-| Codex | `codex-acp` | [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) |
-| Kimi CLI | `kimi` (args: `["acp"]`) | [moonshotai/kimi-cli](https://github.com/nicepkg/kimi-cli) |
+| Agent | Install | Command | Reference |
+|-------|---------|---------|-----------|
+| Claude Code | `npm i -g @zed-industries/claude-code-acp` | `claude-agent-acp` | [zed-industries/claude-agent-acp](https://github.com/zed-industries/claude-agent-acp) |
+| Codex | `npm i -g @openai/codex-acp` | `codex-acp` | [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) |
+| Kimi CLI | `npm i -g kimi-cli` | `kimi` (args: `["acp"]`) | [moonshotai/kimi-cli](https://github.com/nicepkg/kimi-cli) |
 
 ```python
-# Kimi CLI example (command + args passed separately)
+# Kimi CLI example
 agent = AcpAgent(command="kimi", args=["acp"])
 ```
 
-### 3. OpenAI / Compatible APIs
+### Pattern B: OpenAI / Compatible APIs
+
+Use this pattern for OpenAI, or any API with an OpenAI-compatible interface (e.g. DeepSeek, Moonshot, local models via Ollama).
+
+**Prerequisites:**
+
+```bash
+pip install 'wechat-agent-sdk[openai,qr]'
+```
+
+Set the `OPENAI_API_KEY` environment variable. Optionally set `OPENAI_BASE_URL` for compatible APIs.
+
+**Implementation:**
 
 ```python
 import asyncio
@@ -118,19 +168,12 @@ async def main():
 asyncio.run(main())
 ```
 
-Environment variables:
+### Pattern C: Custom Agent
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API Key |
-| `OPENAI_BASE_URL` | No | Custom API base URL (for OpenAI-compatible services) |
-
-## API Reference
-
-### Agent (Abstract Base Class)
+Implement any custom logic. The `Agent` interface is intentionally minimal:
 
 ```python
-from wechat_agent_sdk import Agent
+from wechat_agent_sdk import Agent, ChatRequest, ChatResponse
 
 class MyAgent(Agent):
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -138,17 +181,19 @@ class MyAgent(Agent):
         ...
 
     async def on_start(self) -> None:
-        """Called when the bot starts. Optional, for initialization."""
+        """Called once when the bot starts. Use for initialization (e.g. loading models)."""
         ...
 
     async def on_stop(self) -> None:
-        """Called when the bot stops. Optional, for cleanup."""
+        """Called once when the bot stops. Use for cleanup."""
         ...
 ```
 
+## API Reference
+
 ### ChatRequest
 
-Inbound message, parsed from WeChat by the SDK.
+Inbound message from WeChat, parsed by the SDK.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -164,11 +209,11 @@ Inbound message, parsed from WeChat by the SDK.
 
 ### ChatResponse
 
-Reply from an Agent back to WeChat.
+Reply from the Agent back to WeChat.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `text` | `str \| None` | Reply text. Markdown is supported and auto-stripped before sending |
+| `text` | `str \| None` | Reply text. Markdown is auto-stripped to plain text before sending |
 | `media` | `MediaResponseInfo \| None` | Reply media (image/video/file) |
 
 `MediaResponseInfo`:
@@ -203,21 +248,30 @@ await bot.stop()    # Graceful shutdown
 
 ### AcpAgent
 
-Bridge external agents via the ACP protocol.
+Bridge external agents via the ACP protocol. **Requires the ACP adapter to be installed separately** (see Integration Patterns above).
 
 ```python
 from wechat_agent_sdk.acp.adapter import AcpAgent
 
 agent = AcpAgent(
-    command="claude-agent-acp",  # ACP agent launch command
-    args=[],                      # Command arguments
-    cwd=None,                     # Working directory (defaults to cwd)
-    env=None,                     # Additional environment variables
-    auto_approve=True,            # Auto-approve agent permission requests
+    command="claude-agent-acp",           # ACP agent launch command
+    args=[],                               # Command arguments
+    cwd=None,                              # Working directory (defaults to cwd)
+    env=None,                              # Additional environment variables
+    auto_approve=True,                     # Auto-approve ACP protocol permission requests
+    permission_mode="bypassPermissions",   # Agent-level permission mode (see below)
 )
 ```
 
-The SDK spawns the ACP agent as a subprocess and communicates via JSON-RPC over stdio. Each WeChat conversation gets an independent ACP session with full multi-turn context.
+**Permission mode** (`permission_mode`) — ACP agents like `claude-agent-acp` have their own internal permission system separate from the ACP protocol. In a non-interactive environment like WeChat, the agent cannot prompt for terminal confirmation and will reply "I don't have permission" unless configured otherwise. This parameter sets the `ACP_PERMISSION_MODE` environment variable:
+
+| Mode | Behavior |
+|------|----------|
+| `"bypassPermissions"` | Skip all permission prompts (**default, recommended for WeChat**) |
+| `"acceptEdits"` | Auto-approve file edits; other operations still require confirmation |
+| `"default"` | Ask for confirmation on everything (will fail in non-interactive environments) |
+
+**Streaming** — When the ACP agent executes tool calls (e.g. reading files, running commands), text accumulated before each tool call is automatically flushed to WeChat, so the user sees incremental output instead of waiting for the entire response.
 
 ### Custom Storage
 
@@ -290,16 +344,6 @@ src/wechat_agent_sdk/
 └── utils/
     └── markdown.py          # strip_markdown()
 ```
-
-## Roadmap
-
-- [x] Single account, direct messages (text)
-- [x] ACP protocol adapter
-- [ ] Media messages (image/video/file)
-- [ ] Group chat support (@bot filtering)
-- [ ] Multi-account management
-- [ ] Go SDK
-- [ ] Node.js SDK
 
 ## Acknowledgements
 

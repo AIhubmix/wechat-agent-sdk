@@ -173,6 +173,7 @@ class ILinkBotClient:
                     "ilink_user_id": to_user_id,
                     "typing_ticket": ticket,
                     "status": 1 if start else 2,
+                    "base_info": self._base_info(),
                 },
                 timeout=5.0,
             )

@@ -10,7 +10,7 @@ from typing import Optional
 
 from ..agent import Agent
 from ..api.client import ILinkBotClient, SessionExpiredError
-from ..types import ChatRequest
+from ..types import ChatRequest, ChatResponse
 from .process import parse_message
 from .send import send_response
 
@@ -53,6 +53,9 @@ class MessageMonitor:
 
         # message dedup
         self._seen_ids: OrderedDict[str, None] = OrderedDict()
+
+        # Inject streaming sender into agent (for AcpAgent incremental output)
+        self._setup_message_sender()
 
     @property
     def cursor(self) -> str:
@@ -128,6 +131,9 @@ class MessageMonitor:
         chat_id = request.conversation_id
         logger.info(f"Inbound: from={chat_id} text={request.text[:50]!r}")
 
+        # Set active chat for streaming sender
+        self._active_chat_id = chat_id
+
         # Typing indicator (start)
         ticket = await self._get_typing_ticket(chat_id, context_token)
         if ticket:
@@ -180,6 +186,24 @@ class MessageMonitor:
             pass
 
         return None
+
+    def _setup_message_sender(self) -> None:
+        """Give the agent the ability to send intermediate messages."""
+        if not hasattr(self._agent, "set_message_sender"):
+            return
+
+        # _active_chat_id is set during _handle_message so the sender
+        # knows which conversation to target.
+        self._active_chat_id: Optional[str] = None
+
+        async def _send_intermediate(text: str) -> None:
+            chat_id = self._active_chat_id
+            if not chat_id or not text:
+                return
+            ctx = self._context_tokens.get(chat_id, "")
+            await send_response(self._client, chat_id, ChatResponse(text=text), ctx)
+
+        self._agent.set_message_sender(_send_intermediate)
 
     async def _sleep(self, seconds: float) -> None:
         """Interruptible sleep."""

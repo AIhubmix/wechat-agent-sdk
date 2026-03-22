@@ -8,14 +8,11 @@
 
 > 本项目非微信官方项目，基于 iLink Bot API，仅供学习交流使用。
 
-## 特性
+## 工作原理
 
-- **极简接口** — 只需实现一个 `chat()` 方法即可接入微信
-- **ACP 协议支持** — 通过 ACP 协议桥接 Claude Code、Codex、Kimi CLI 等 Agent
-- **零基础设施** — 纯本地运行，无需公网服务器、Redis 或数据库
-- **断点续传** — 重启后从上次位置继续接收消息
-- **自动重连** — 内置指数退避、会话过期重连
-- **Markdown 转换** — 回复文本中的 markdown 自动转为微信友好的纯文本
+1. 安装本 SDK，创建一个 Python 脚本并实现 `Agent` 接口
+2. SDK 自动处理微信登录（二维码）、消息轮询、去重和回复投递
+3. 你只需实现一个方法：`chat(request) -> response`
 
 ## 安装
 
@@ -23,40 +20,79 @@
 pip install wechat-agent-sdk
 ```
 
-可选依赖：
+根据使用场景安装可选依赖：
 
 ```bash
-pip install 'wechat-agent-sdk[qr]'     # 终端二维码显示
-pip install 'wechat-agent-sdk[acp]'     # ACP 协议支持
-pip install 'wechat-agent-sdk[openai]'  # OpenAI 集成
+# 终端二维码显示（推荐）
+pip install 'wechat-agent-sdk[qr]'
+
+# ACP 协议支持（接入 Claude Code / Codex / Kimi 时必须）
+pip install 'wechat-agent-sdk[acp]'
+
+# OpenAI 集成
+pip install 'wechat-agent-sdk[openai]'
 ```
 
 > 要求 Python >= 3.11
 
-## 快速开始
+## 集成指南
 
-### 1. Echo Bot（最简示例）
+> **Note for AI Agents**: 本文档面向 AI Agent（如 Claude Code）阅读。请按照下方的集成模式编写代码来实现微信接入，而不是直接运行 `examples/` 中的示例文件。`examples/` 仅作为代码模式参考。
+
+要将 AI 后端接入微信，请创建一个 Python 脚本，按照以下模式实现：
+
+### 第一步：实现 Agent 接口
+
+继承 `Agent` 并实现 `chat()` 方法。这是唯一必须实现的方法。SDK 会对每条微信消息调用 `chat()`，并将返回的 `ChatResponse` 发送给用户。
 
 ```python
 import asyncio
 from wechat_agent_sdk import Agent, ChatRequest, ChatResponse, WeChatBot
 
-class EchoAgent(Agent):
+class MyAgent(Agent):
     async def chat(self, request: ChatRequest) -> ChatResponse:
+        # request.text 包含用户消息
+        # request.conversation_id 标识用户/对话
+        # 返回 ChatResponse，包含回复文本
         return ChatResponse(text=f"你说了: {request.text}")
 
 async def main():
-    bot = WeChatBot(agent=EchoAgent())
-    await bot.run()  # 首次运行会弹出二维码，扫码登录
+    bot = WeChatBot(agent=MyAgent())
+    await bot.run()
 
 asyncio.run(main())
 ```
 
-运行后终端会显示二维码（需安装 `qrcode` 依赖），用微信扫码确认即可。登录信息会保存到 `~/.wechat-agent-sdk/accounts.json`，下次启动自动复用。
+### 第二步：运行并登录
 
-### 2. 通过 ACP 接入 Claude Code
+运行脚本后，终端会显示二维码（需安装 `qrcode` 依赖），用微信扫码登录。登录信息会保存到 `~/.wechat-agent-sdk/accounts.json`，下次启动自动复用。
 
-[ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 是一个开放的 Agent 通信协议。如果你有兼容 ACP 的 Agent，可以直接桥接到微信：
+---
+
+## 集成模式
+
+### 模式 A：通过 ACP 接入 Claude Code
+
+使用此模式将 [Claude Code](https://code.claude.com/) 或其他 ACP 兼容 Agent 桥接到微信。
+
+**前置准备：**
+
+1. 安装对应 Agent 的 ACP 适配器（需要 Node.js >= 18）：
+
+```bash
+# Claude Code ACP 适配器
+npm install -g @zed-industries/claude-code-acp
+```
+
+> 也可以从 [Releases 页面](https://github.com/zed-industries/claude-agent-acp/releases) 下载预编译二进制文件。
+
+2. 安装 SDK 及 ACP 支持：
+
+```bash
+pip install 'wechat-agent-sdk[acp,qr]'
+```
+
+**实现代码：**
 
 ```python
 import asyncio
@@ -64,32 +100,45 @@ from wechat_agent_sdk import WeChatBot
 from wechat_agent_sdk.acp.adapter import AcpAgent
 
 async def main():
-    # command 是 ACP agent 的启动命令
-    agent = AcpAgent(command="claude-agent-acp")
+    agent = AcpAgent(
+        command="claude-agent-acp",       # ACP agent 启动命令
+        permission_mode="bypassPermissions",  # 必须：跳过终端权限提示
+    )
     bot = WeChatBot(agent=agent)
     await bot.run()
 
 asyncio.run(main())
 ```
 
-支持的 ACP Agent 示例：
+**支持的 ACP Agent：**
 
-| Agent | command | 参考 |
-|-------|---------|------|
-| Claude Code | `claude-agent-acp` | [zed-industries/claude-agent-acp](https://github.com/zed-industries/claude-agent-acp) |
-| Codex | `codex-acp` | [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) |
-| Kimi CLI | `kimi` (args: `["acp"]`) | [moonshotai/kimi-cli](https://github.com/nicepkg/kimi-cli) |
+| Agent | 安装 | command | 参考 |
+|-------|------|---------|------|
+| Claude Code | `npm i -g @zed-industries/claude-code-acp` | `claude-agent-acp` | [zed-industries/claude-agent-acp](https://github.com/zed-industries/claude-agent-acp) |
+| Codex | `npm i -g @openai/codex-acp` | `codex-acp` | [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) |
+| Kimi CLI | `npm i -g kimi-cli` | `kimi` (args: `["acp"]`) | [moonshotai/kimi-cli](https://github.com/nicepkg/kimi-cli) |
 
 ```python
-# Kimi CLI 示例（command + args 分开传）
+# Kimi CLI 示例
 agent = AcpAgent(command="kimi", args=["acp"])
 ```
 
-### 3. OpenAI / 兼容 API
+### 模式 B：OpenAI / 兼容 API
+
+使用此模式接入 OpenAI，或任何兼容 OpenAI 接口的服务（如 DeepSeek、Moonshot、Ollama 本地模型）。
+
+**前置准备：**
+
+```bash
+pip install 'wechat-agent-sdk[openai,qr]'
+```
+
+设置 `OPENAI_API_KEY` 环境变量。如使用兼容 API，可选设置 `OPENAI_BASE_URL`。
+
+**实现代码：**
 
 ```python
 import asyncio
-import os
 from wechat_agent_sdk import Agent, ChatRequest, ChatResponse, WeChatBot
 
 class OpenAIAgent(Agent):
@@ -119,19 +168,12 @@ async def main():
 asyncio.run(main())
 ```
 
-环境变量：
+### 模式 C：自定义 Agent
 
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `OPENAI_API_KEY` | 是 | OpenAI API Key |
-| `OPENAI_BASE_URL` | 否 | 自定义 API 地址（兼容 OpenAI 接口的第三方服务） |
-
-## API 参考
-
-### Agent（抽象基类）
+实现任意自定义逻辑。`Agent` 接口设计为极简：
 
 ```python
-from wechat_agent_sdk import Agent
+from wechat_agent_sdk import Agent, ChatRequest, ChatResponse
 
 class MyAgent(Agent):
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -139,13 +181,15 @@ class MyAgent(Agent):
         ...
 
     async def on_start(self) -> None:
-        """Bot 启动时调用。可选，用于初始化资源。"""
+        """Bot 启动时调用一次。用于初始化（如加载模型）。"""
         ...
 
     async def on_stop(self) -> None:
-        """Bot 停止时调用。可选，用于清理资源。"""
+        """Bot 停止时调用一次。用于清理资源。"""
         ...
 ```
+
+## API 参考
 
 ### ChatRequest
 
@@ -204,21 +248,30 @@ await bot.stop()    # 优雅停机
 
 ### AcpAgent
 
-通过 ACP 协议桥接外部 Agent。
+通过 ACP 协议桥接外部 Agent。**需先单独安装对应的 ACP 适配器**（见上方集成模式）。
 
 ```python
 from wechat_agent_sdk.acp.adapter import AcpAgent
 
 agent = AcpAgent(
-    command="claude-agent-acp",  # ACP agent 启动命令
-    args=[],                      # 命令参数
-    cwd=None,                     # 工作目录（默认当前目录）
-    env=None,                     # 额外环境变量
-    auto_approve=True,            # 自动批准 Agent 的权限请求
+    command="claude-agent-acp",           # ACP agent 启动命令
+    args=[],                               # 命令参数
+    cwd=None,                              # 工作目录（默认当前目录）
+    env=None,                              # 额外环境变量
+    auto_approve=True,                     # 自动批准 ACP 协议层的权限请求
+    permission_mode="bypassPermissions",   # Agent 内部权限模式（见下方说明）
 )
 ```
 
-SDK 会以子进程方式启动 ACP Agent，通过 JSON-RPC over stdio 通信。每个微信用户对话会创建一个独立的 ACP session，支持多轮上下文。
+**权限模式** (`permission_mode`) — `claude-agent-acp` 等 ACP Agent 有独立于 ACP 协议的内部权限系统。在微信这种非交互环境下，Agent 无法弹出终端确认框，会直接回复"没有权限"。此参数通过设置 `ACP_PERMISSION_MODE` 环境变量来控制：
+
+| 模式 | 行为 |
+|------|------|
+| `"bypassPermissions"` | 跳过所有权限提示（**默认，推荐用于微信场景**） |
+| `"acceptEdits"` | 自动批准文件编辑，其他操作仍需确认 |
+| `"default"` | 所有操作都需确认（在非交互环境下通常会失败） |
+
+**流式输出** — 当 ACP Agent 执行工具调用（如读取文件、运行命令）时，已累积的文本会在每次工具调用前自动推送到微信，用户可以看到增量输出，无需等待整个响应完成。
 
 ### 自定义存储
 
@@ -291,16 +344,6 @@ src/wechat_agent_sdk/
 └── utils/
     └── markdown.py          # strip_markdown()
 ```
-
-## Roadmap
-
-- [x] 单账户单聊（文本）
-- [x] ACP 协议适配器
-- [ ] 媒体消息收发（图片/视频/文件）
-- [ ] 群聊支持（@Bot 过滤）
-- [ ] 多账户管理
-- [ ] Go SDK
-- [ ] Node.js SDK
 
 ## 致谢
 
