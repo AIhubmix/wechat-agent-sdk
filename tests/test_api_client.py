@@ -153,13 +153,17 @@ async def test_request_qrcode(client):
 async def test_check_login_confirmed(client):
     api_client, transport = client
     transport.set_response("/ilink/bot/get_qrcode_status", {
-        "ret": 0,
-        "token": "new_bot_token",
+        "status": "confirmed",
+        "bot_token": "new_bot_token",
+        "ilink_bot_id": "bot123@im.bot",
+        "ilink_user_id": "user456@im.wechat",
+        "baseurl": "https://ilinkai.weixin.qq.com",
     })
 
     result = await api_client.check_login_status("uuid_abc")
     assert result["status"] == "confirmed"
     assert result["token"] == "new_bot_token"
+    assert result["bot_id"] == "bot123@im.bot"
 
 
 @pytest.mark.asyncio

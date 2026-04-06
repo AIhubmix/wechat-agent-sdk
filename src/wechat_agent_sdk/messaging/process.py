@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from ..api.types import ItemType, WeixinMessage
-from ..types import ChatRequest
+from ..types import ChatRequest, MediaInfo
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,7 @@ def _extract_text(item_list: list[dict]) -> str:
                 parts.append("[语音]")
 
         elif item_type == ItemType.IMAGE:
-            if not parts or parts[-1] != "[图片]":
-                parts.append("[图片]")
+            parts.append("[图片]")
 
         elif item_type == ItemType.VIDEO:
             parts.append("[视频]")
@@ -88,3 +87,48 @@ def _extract_text_from_item(item: dict) -> str:
     if item_type == ItemType.TEXT:
         return item.get("text_item", {}).get("text", "")
     return ""
+
+
+def extract_all_media(item_list: list[dict]) -> list[MediaInfo]:
+    """Extract all media attachments from item_list (images, files, videos, voice)."""
+    result: list[MediaInfo] = []
+
+    for item in item_list:
+        item_type = item.get("type", 0)
+
+        if item_type == ItemType.IMAGE:
+            image = item.get("image_item", {})
+            media_ref = image.get("media", {})
+            result.append(MediaInfo(
+                type="image",
+                cdn_param=media_ref.get("encrypt_query_param", ""),
+                aes_key=media_ref.get("aes_key", ""),
+                aeskey_hex=image.get("aeskey", ""),
+            ))
+        elif item_type == ItemType.FILE:
+            file_item = item.get("file_item", {})
+            media_ref = file_item.get("media", {})
+            result.append(MediaInfo(
+                type="file",
+                cdn_param=media_ref.get("encrypt_query_param", ""),
+                aes_key=media_ref.get("aes_key", ""),
+                file_name=file_item.get("file_name"),
+            ))
+        elif item_type == ItemType.VIDEO:
+            video = item.get("video_item", {})
+            media_ref = video.get("media", {})
+            result.append(MediaInfo(
+                type="video",
+                cdn_param=media_ref.get("encrypt_query_param", ""),
+                aes_key=media_ref.get("aes_key", ""),
+            ))
+        elif item_type == ItemType.VOICE:
+            voice = item.get("voice_item", {})
+            media_ref = voice.get("media", {})
+            result.append(MediaInfo(
+                type="audio",
+                cdn_param=media_ref.get("encrypt_query_param", ""),
+                aes_key=media_ref.get("aes_key", ""),
+            ))
+
+    return result

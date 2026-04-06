@@ -1,10 +1,18 @@
 """
 wechat-agent-sdk — WeChat AI Agent bridge framework.
 
-Provides a simple Agent interface to connect any AI backend to WeChat
-via the iLink Bot API, with optional ACP (Agent Client Protocol) support.
+Two-layer architecture:
 
-Quick start::
+**Transport layer** (platform integration)::
+
+    from wechat_agent_sdk import WeChatTransport, ParsedMessage
+
+    transport = WeChatTransport(account_id="bot_1")
+    async for msg in transport.messages():
+        parsed = transport.parse(msg)
+        await transport.send_text(parsed.conversation_id, "reply")
+
+**Bot layer** (standalone developers)::
 
     from wechat_agent_sdk import Agent, ChatRequest, ChatResponse, WeChatBot
 
@@ -16,18 +24,43 @@ Quick start::
     await bot.run()
 """
 
+# === Transport layer (platform integration) ===
+from .transport import WeChatTransport, ParsedMessage, LoginRequiredError
+
+# === Bot layer (standalone developers) ===
 from .agent import Agent
 from .types import ChatRequest, ChatResponse, MediaInfo, MediaResponseInfo
-from .account.manager import WeChatBot
+from .account.manager import WeChatBot, WeChatBotBuilder
+from .middleware import Context, Middleware, MiddlewareChain, make_error_middleware
+from .account.bot_manager import WeChatBotManager, BotStatus
+
+# === Shared infrastructure ===
 from .account.storage import AccountStorage, JsonFileStorage
+from .api.auth import LoginSession, LoginResult, LoginStatus
 
 __all__ = [
+    # Transport
+    "WeChatTransport",
+    "ParsedMessage",
+    "LoginRequiredError",
+    # Bot
     "Agent",
     "ChatRequest",
     "ChatResponse",
     "MediaInfo",
     "MediaResponseInfo",
     "WeChatBot",
+    "WeChatBotBuilder",
+    "WeChatBotManager",
+    "BotStatus",
+    "Context",
+    "Middleware",
+    "MiddlewareChain",
+    "make_error_middleware",
+    # Shared
     "AccountStorage",
     "JsonFileStorage",
+    "LoginSession",
+    "LoginResult",
+    "LoginStatus",
 ]
