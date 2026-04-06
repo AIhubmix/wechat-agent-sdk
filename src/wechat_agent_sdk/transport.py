@@ -343,10 +343,25 @@ class WeChatTransport:
         start: bool = True,
         context_token: str = "",
     ) -> None:
-        """Send typing indicator with auto ticket caching (24h TTL)."""
+        """Send typing indicator with auto ticket caching and retry on failure."""
+        logger.debug(f"[typing] send_typing called: chat_id={chat_id}, start={start}")
         ticket = await self._get_typing_ticket(chat_id, context_token)
-        if ticket:
+        if not ticket:
+            logger.debug(f"[typing] No ticket for {chat_id}, skipped")
+            return
+
+        try:
             await self._client.send_typing(chat_id, ticket, start=start)
+        except Exception as e:
+            # Ticket may be stale — invalidate cache and retry once
+            logger.debug(f"[typing] Failed with cached ticket for {chat_id}: {e}, retrying")
+            self._typing_tickets.pop(chat_id, None)
+            ticket = await self._get_typing_ticket(chat_id, context_token)
+            if ticket:
+                try:
+                    await self._client.send_typing(chat_id, ticket, start=start)
+                except Exception:
+                    pass  # Best-effort after retry
 
     async def _get_typing_ticket(
         self,
@@ -365,8 +380,10 @@ class WeChatTransport:
             if ticket:
                 self._typing_tickets[chat_id] = (ticket, time.time())
                 return ticket
-        except Exception:
-            pass
+            else:
+                logger.debug(f"[typing] No typing_ticket in get_config response for {chat_id}")
+        except Exception as e:
+            logger.debug(f"[typing] get_config failed for {chat_id}: {e}")
         return None
 
     # ── Utilities ──

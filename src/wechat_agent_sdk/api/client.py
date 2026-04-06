@@ -168,22 +168,20 @@ class ILinkBotClient:
     # ------------------------------------------------------------------
 
     async def send_typing(self, to_user_id: str, ticket: str, start: bool = True) -> None:
-        """Send typing indicator (best-effort)."""
+        """Send typing indicator. Raises on non-2xx so caller can invalidate ticket."""
         client = await self._ensure_client()
 
-        try:
-            await client.post(
-                f"{self._base_url}/ilink/bot/sendtyping",
-                json={
-                    "ilink_user_id": to_user_id,
-                    "typing_ticket": ticket,
-                    "status": 1 if start else 2,
-                    "base_info": self._base_info(),
-                },
-                timeout=5.0,
-            )
-        except Exception:
-            pass  # Best-effort
+        resp = await client.post(
+            f"{self._base_url}/ilink/bot/sendtyping",
+            json={
+                "ilink_user_id": to_user_id,
+                "typing_ticket": ticket,
+                "status": 1 if start else 2,
+                "base_info": self._base_info(),
+            },
+            timeout=5.0,
+        )
+        resp.raise_for_status()
 
     # ------------------------------------------------------------------
     # getConfig — get typing ticket for a user
