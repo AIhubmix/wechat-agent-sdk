@@ -11,7 +11,14 @@ class MediaInfo:
     """Attachment (image, audio, video, or file)."""
 
     type: str  # "image" | "audio" | "video" | "file"
-    file_path: str  # Local file path (already downloaded and decrypted)
+
+    # CDN reference (for lazy download via transport.download_media)
+    cdn_param: str = ""  # encrypt_query_param
+    aes_key: str = ""  # base64-encoded AES key (media.aes_key)
+    aeskey_hex: str = ""  # hex AES key (image_item.aeskey, takes priority)
+
+    # Local file info (populated after download)
+    file_path: str = ""
     mime_type: str = "application/octet-stream"
     file_name: Optional[str] = None
 

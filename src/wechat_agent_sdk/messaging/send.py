@@ -10,8 +10,8 @@ from ..utils.markdown import strip_markdown
 
 logger = logging.getLogger(__name__)
 
-# WeChat has a max message length (~4000 chars for text)
-MAX_MESSAGE_LENGTH = 4000
+# WeChat text message length limit (~2000 chars per iLink protocol)
+MAX_MESSAGE_LENGTH = 2000
 
 
 async def send_response(
@@ -27,9 +27,11 @@ async def send_response(
         for chunk in split_text(plain_text, MAX_MESSAGE_LENGTH):
             await client.send_message(to_user_id, chunk, context_token)
 
-    # Media sending is Phase 2
     if response.media:
-        logger.warning("Media sending not yet implemented, skipping media response")
+        logger.warning(
+            "send_response() does not support media upload. "
+            "Use WeChatTransport.send_media() for full media support."
+        )
 
 
 def split_text(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> list[str]:

@@ -14,7 +14,7 @@ DEFAULT_STATE_DIR = Path.home() / ".wechat-agent-sdk"
 
 
 class AccountStorage(ABC):
-    """Abstract interface for persisting account state (token, cursor)."""
+    """Abstract interface for persisting account state (token, cursor, metadata)."""
 
     @abstractmethod
     async def load_token(self, account_id: str) -> Optional[str]:
@@ -31,6 +31,16 @@ class AccountStorage(ABC):
     @abstractmethod
     async def save_cursor(self, account_id: str, cursor: str) -> None:
         ...
+
+    async def load_meta(self, account_id: str) -> Optional[dict]:
+        """Load account metadata (bot_id, base_url, etc.)."""
+        return None
+
+    async def save_meta(self, account_id: str, meta: dict) -> None:
+        """Save account metadata."""
+
+    async def close(self) -> None:
+        """Close underlying connections (Redis, SQLite, etc.)."""
 
 
 class JsonFileStorage(AccountStorage):
@@ -79,4 +89,11 @@ class JsonFileStorage(AccountStorage):
 
     async def save_cursor(self, account_id: str, cursor: str) -> None:
         self._get_account(account_id)["cursor"] = cursor
+        self._save()
+
+    async def load_meta(self, account_id: str) -> Optional[dict]:
+        return self._get_account(account_id).get("meta") or None
+
+    async def save_meta(self, account_id: str, meta: dict) -> None:
+        self._get_account(account_id)["meta"] = meta
         self._save()
